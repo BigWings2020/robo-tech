@@ -1,0 +1,74 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+RobotechPixel	KEYWORD1
+BoardType	KEYWORD1
+BOARD_NEORING	LITERAL1
+BOARD_QUADPIXEL	LITERAL1
+
+#######################################
+# Methods (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+show	KEYWORD2
+clear	KEYWORD2
+setBrightness	KEYWORD2
+getBrightness	KEYWORD2
+setLed	KEYWORD2
+setRingLed	KEYWORD2
+color	KEYWORD2
+getBoardType	KEYWORD2
+getNumBoards	KEYWORD2
+getTotalPixels	KEYWORD2
+getLedsPerRing	KEYWORD2
+getLedsPerBoard	KEYWORD2
+innerPixel	KEYWORD2
+outerPixel	KEYWORD2
+setPathPixel	KEYWORD2
+fadeAll	KEYWORD2
+fadePixel	KEYWORD2
+getPixelColor	KEYWORD2
+
+#######################################
+# Effects (KEYWORD2)
+#######################################
+
+fxAutoCycle	KEYWORD2
+fxPixelWalk	KEYWORD2
+fxRadarSweep	KEYWORD2
+fxDualSpin	KEYWORD2
+fxComets	KEYWORD2
+fxCometCrosser	KEYWORD2
+fxOrbit	KEYWORD2
+fxMeteorShower	KEYWORD2
+fxCylon	KEYWORD2
+fxTheaterChase	KEYWORD2
+fxSparkle	KEYWORD2
+fxConfetti	KEYWORD2
+fxSparks	KEYWORD2
+fxTwinkle	KEYWORD2
+fxColorCycle	KEYWORD2
+fxRainbowWheel	KEYWORD2
+fxWave	KEYWORD2
+fxRipplePulse	KEYWORD2
+fxColorWipe	KEYWORD2
+fxBreathing	KEYWORD2
+fxHeartbeat	KEYWORD2
+fxFireRing	KEYWORD2
+fxStarfield	KEYWORD2
+fxStrobe	KEYWORD2
+fxPolice	KEYWORD2
+fxHypnosis	KEYWORD2
+fxRoulette	KEYWORD2
+fxWheelOfFortune	KEYWORD2
+fxClockEffect	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+RP_NEORING_LEDS_PER_RING	LITERAL1
+RP_NEORING_LEDS_PER_BOARD	LITERAL1
+RP_QUADPIXEL_LEDS_PER_BOARD	LITERAL1
