@@ -1,72 +1,82 @@
 #include "RobotechPixel.h"
 
+// =====================================================
+//  Board definitions (PROGMEM)
+// =====================================================
+
+const BoardDef BOARD_DEFS[BOARD_TYPE_COUNT] PROGMEM = {
+//  ledsPerRing  numRings  totalLeds
+  {  48,           2,        96 },    // BOARD_NEORING
+  {  60,           3,       180 },    // BOARD_NEORING_XL
+  {   0,           0,         4 },    // BOARD_QUADPIXEL
+};
+
+// =====================================================
+//  Constructors
+// =====================================================
+
+// Uniform chain (backward compatible)
 RobotechPixel::RobotechPixel(BoardType boardType, uint8_t numBoards, uint8_t pin)
-  : _leds(nullptr),
-    _pin(pin),
-    _boardType(boardType),
-    _numBoards(numBoards)
+  : _strip(0, pin, NEO_GRB + NEO_KHZ800),
+    _numBoards(min(numBoards, (uint8_t)RP_MAX_BOARDS))
 {
-  uint16_t ledsPerBoard = (boardType == BOARD_NEORING)
-    ? RP_NEORING_LEDS_PER_BOARD
-    : RP_QUADPIXEL_LEDS_PER_BOARD;
-  _totalPixels = numBoards * ledsPerBoard;
+  for (uint8_t i = 0; i < _numBoards; i++) _types[i] = boardType;
+  _computeOffsets();
+}
+
+// Mixed chain
+RobotechPixel::RobotechPixel(const BoardType* types, uint8_t numBoards, uint8_t pin)
+  : _strip(0, pin, NEO_GRB + NEO_KHZ800),
+    _numBoards(min(numBoards, (uint8_t)RP_MAX_BOARDS))
+{
+  for (uint8_t i = 0; i < _numBoards; i++) _types[i] = types[i];
+  _computeOffsets();
+}
+
+void RobotechPixel::_computeOffsets() {
+  _totalPixels = 0;
+  for (uint8_t i = 0; i < _numBoards; i++) {
+    _offsets[i] = _totalPixels;
+    BoardDef def = rpGetBoardDef(_types[i]);
+    _totalPixels += def.totalLeds;
+  }
+  _strip.updateLength(_totalPixels);
 }
 
 // --- Lifecycle ---
 
 void RobotechPixel::begin() {
-  _leds = new CRGB[_totalPixels];
-  memset(_leds, 0, sizeof(CRGB) * _totalPixels);
-
-  switch (_pin) {
-    case 2:  FastLED.addLeds<WS2812B, 2,  GRB>(_leds, _totalPixels); break;
-    case 3:  FastLED.addLeds<WS2812B, 3,  GRB>(_leds, _totalPixels); break;
-    case 4:  FastLED.addLeds<WS2812B, 4,  GRB>(_leds, _totalPixels); break;
-    case 5:  FastLED.addLeds<WS2812B, 5,  GRB>(_leds, _totalPixels); break;
-    case 6:  FastLED.addLeds<WS2812B, 6,  GRB>(_leds, _totalPixels); break;
-    case 7:  FastLED.addLeds<WS2812B, 7,  GRB>(_leds, _totalPixels); break;
-    case 8:  FastLED.addLeds<WS2812B, 8,  GRB>(_leds, _totalPixels); break;
-    case 9:  FastLED.addLeds<WS2812B, 9,  GRB>(_leds, _totalPixels); break;
-    case 10: FastLED.addLeds<WS2812B, 10, GRB>(_leds, _totalPixels); break;
-    case 11: FastLED.addLeds<WS2812B, 11, GRB>(_leds, _totalPixels); break;
-    case 12: FastLED.addLeds<WS2812B, 12, GRB>(_leds, _totalPixels); break;
-    case 13: FastLED.addLeds<WS2812B, 13, GRB>(_leds, _totalPixels); break;
-  }
-
-  FastLED.show();
+  _strip.begin();
+  _strip.show();
 }
 
-void RobotechPixel::show()  { FastLED.show(); }
-void RobotechPixel::clear() { fill_solid(_leds, _totalPixels, CRGB::Black); }
+void RobotechPixel::show()  { _strip.show(); }
+void RobotechPixel::clear() { _strip.clear(); }
 
 // --- Brightness ---
 
-void    RobotechPixel::setBrightness(uint8_t b) { FastLED.setBrightness(b); }
-uint8_t RobotechPixel::getBrightness() const     { return FastLED.getBrightness(); }
+void    RobotechPixel::setBrightness(uint8_t b) { _strip.setBrightness(b); }
+uint8_t RobotechPixel::getBrightness() const     { return _strip.getBrightness(); }
 
 // --- Low-Level LED Access ---
 
 void RobotechPixel::setLed(int globalIndex, uint32_t color) {
-  if (globalIndex >= 0 && globalIndex < _totalPixels) {
-    _leds[globalIndex] = CRGB(
-      (color >> 16) & 0xFF,
-      (color >> 8)  & 0xFF,
-       color        & 0xFF
-    );
-  }
+  if (globalIndex >= 0 && globalIndex < _totalPixels)
+    _strip.setPixelColor(globalIndex, color);
 }
 
 void RobotechPixel::setRingLed(int pcbIndex, int ringIndex, int ledIndex, uint32_t color) {
-  if (_boardType == BOARD_NEORING) {
-    int base = pcbIndex * RP_NEORING_LEDS_PER_BOARD;
-    int offset = (ringIndex == 0)
-      ? (ledIndex % RP_NEORING_LEDS_PER_RING)
-      : RP_NEORING_LEDS_PER_RING + (ledIndex % RP_NEORING_LEDS_PER_RING);
-    setLed(base + offset, color);
-  } else {
-    // QuadPixel: ringIndex ignored, just board + led
-    setLed(pcbIndex * RP_QUADPIXEL_LEDS_PER_BOARD + ledIndex, color);
+  if (pcbIndex < 0 || pcbIndex >= _numBoards) return;
+  BoardDef def = rpGetBoardDef(_types[pcbIndex]);
+  if (def.numRings == 0) {
+    // Non-ring board: ignore ringIndex
+    setLed(_offsets[pcbIndex] + (ledIndex % def.totalLeds), color);
+    return;
   }
+  if (ringIndex < 0 || ringIndex >= def.numRings) return;
+  int base = _offsets[pcbIndex];
+  int offset = ringIndex * def.ledsPerRing + ((ledIndex % def.ledsPerRing + def.ledsPerRing) % def.ledsPerRing);
+  setLed(base + offset, color);
 }
 
 void RobotechPixel::setRingLed(int ringIndex, int ledIndex, uint32_t color) {
@@ -78,56 +88,93 @@ void RobotechPixel::setRingLed(int ledIndex, uint32_t color) {
 }
 
 uint32_t RobotechPixel::color(uint8_t r, uint8_t g, uint8_t b) {
-  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+  return Adafruit_NeoPixel::Color(r, g, b);
 }
 
-// --- Geometry ---
+// --- Per-board geometry queries ---
 
-BoardType RobotechPixel::getBoardType()   const { return _boardType; }
+BoardType RobotechPixel::getBoardType(uint8_t board) const {
+  return (board < _numBoards) ? _types[board] : _types[0];
+}
+
+uint8_t RobotechPixel::getLedsPerRing(uint8_t board) const {
+  BoardDef def = rpGetBoardDef((board < _numBoards) ? _types[board] : _types[0]);
+  return def.ledsPerRing;
+}
+
+uint8_t RobotechPixel::getNumRings(uint8_t board) const {
+  BoardDef def = rpGetBoardDef((board < _numBoards) ? _types[board] : _types[0]);
+  return def.numRings;
+}
+
+uint16_t RobotechPixel::getLedsPerBoard(uint8_t board) const {
+  BoardDef def = rpGetBoardDef((board < _numBoards) ? _types[board] : _types[0]);
+  return def.totalLeds;
+}
+
+uint16_t RobotechPixel::getBoardOffset(uint8_t board) const {
+  return (board < _numBoards) ? _offsets[board] : 0;
+}
+
+bool RobotechPixel::boardHasRings(uint8_t board) const {
+  return getNumRings(board) > 0;
+}
+
+// --- Backward-compatible scalar queries (board 0) ---
+
+BoardType RobotechPixel::getBoardType()   const { return _types[0]; }
 uint8_t   RobotechPixel::getNumBoards()   const { return _numBoards; }
 uint16_t  RobotechPixel::getTotalPixels() const { return _totalPixels; }
-uint16_t  RobotechPixel::getLedsPerRing() const { return RP_NEORING_LEDS_PER_RING; }
+uint16_t  RobotechPixel::getLedsPerRing() const { return getLedsPerRing(0); }
 
 uint16_t RobotechPixel::getLedsPerBoard() const {
-  return (_boardType == BOARD_NEORING) ? RP_NEORING_LEDS_PER_BOARD : RP_QUADPIXEL_LEDS_PER_BOARD;
+  return getLedsPerBoard(0);
 }
 
 // --- Ring Mapping ---
 
 int RobotechPixel::innerPixel(int board, int idx) const {
-  return (board * RP_NEORING_LEDS_PER_BOARD) + (idx % RP_NEORING_LEDS_PER_RING);
+  if (board < 0 || board >= _numBoards) return 0;
+  BoardDef def = rpGetBoardDef(_types[board]);
+  return _offsets[board] + (idx % def.ledsPerRing);
 }
 
 int RobotechPixel::outerPixel(int board, int idx) const {
-  return (board * RP_NEORING_LEDS_PER_BOARD) + RP_NEORING_LEDS_PER_RING
-         + (idx % RP_NEORING_LEDS_PER_RING);
+  if (board < 0 || board >= _numBoards) return 0;
+  BoardDef def = rpGetBoardDef(_types[board]);
+  return _offsets[board] + def.ledsPerRing + (idx % def.ledsPerRing);
 }
 
 void RobotechPixel::setPathPixel(int board, int pathPos, uint32_t color) {
-  pathPos = pathPos % (RP_NEORING_LEDS_PER_RING * 2);
-  if (pathPos < RP_NEORING_LEDS_PER_RING)
-    setLed(innerPixel(board, pathPos), color);
-  else
-    setLed(outerPixel(board, pathPos - RP_NEORING_LEDS_PER_RING), color);
+  if (board < 0 || board >= _numBoards) return;
+  BoardDef def = rpGetBoardDef(_types[board]);
+  if (def.numRings == 0) return;
+  uint16_t pathLen = def.ledsPerRing * def.numRings;
+  pathPos = ((pathPos % pathLen) + pathLen) % pathLen;
+  int ring = pathPos / def.ledsPerRing;
+  int led  = pathPos % def.ledsPerRing;
+  setRingLed(board, ring, led, color);
 }
 
 // --- Pixel Manipulation ---
 
 void RobotechPixel::fadeAll(uint8_t factor) {
   for (int i = 0; i < _totalPixels; i++)
-    _leds[i].nscale8(factor);
+    fadePixel(i, factor);
 }
 
 void RobotechPixel::fadePixel(int index, uint8_t factor) {
-  if (index >= 0 && index < _totalPixels)
-    _leds[index].nscale8(factor);
+  uint32_t c = _strip.getPixelColor(index);
+  uint8_t r = (c >> 16) & 0xFF;
+  uint8_t g = (c >> 8)  & 0xFF;
+  uint8_t b =  c        & 0xFF;
+  _strip.setPixelColor(index, Adafruit_NeoPixel::Color(
+    (r * factor) >> 8,
+    (g * factor) >> 8,
+    (b * factor) >> 8
+  ));
 }
 
 uint32_t RobotechPixel::getPixelColor(int index) const {
-  if (index >= 0 && index < _totalPixels) {
-    return ((uint32_t)_leds[index].r << 16) |
-           ((uint32_t)_leds[index].g << 8)  |
-            (uint32_t)_leds[index].b;
-  }
-  return 0;
+  return _strip.getPixelColor(index);
 }

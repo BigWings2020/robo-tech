@@ -37,11 +37,13 @@ void fxPixelWalk(RobotechPixel& px, unsigned long now,
 
   px.clear();
   for (int b = 0; b < px.getNumBoards(); b++) {
-    px.setRingLed(b, 0, pos, innerColor);
-    px.setRingLed(b, 1, pos, outerColor);
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    px.setRingLed(b, 0, pos % lpr, innerColor);
+    px.setRingLed(b, 1, pos % lpr, outerColor);
   }
   px.show();
-  pos = (pos + 1) % px.getLedsPerRing();
+  pos++;
 }
 
 // ============================================================
@@ -58,20 +60,22 @@ void fxRadarSweep(RobotechPixel& px, unsigned long now,
   uint8_t r = (color >> 16) & 0xFF;
   uint8_t g = (color >> 8)  & 0xFF;
   uint8_t b =  color        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   px.clear();
   for (int bd = 0; bd < px.getNumBoards(); bd++) {
-    for (int j = 0; j < tailLen; j++) {
-      int idx = (head - j + ledsPerRing) % ledsPerRing;
-      uint8_t fade = 255 - (j * 255 / tailLen);
+    if (!px.boardHasRings(bd)) continue;
+    uint8_t lpr = px.getLedsPerRing(bd);
+    int tl = min(tailLen, (int)lpr);
+    for (int j = 0; j < tl; j++) {
+      int idx = ((head % lpr) - j + lpr) % lpr;
+      uint8_t fade = 255 - (j * 255 / tl);
       uint32_t c = RobotechPixel::color((r * fade) >> 8, (g * fade) >> 8, (b * fade) >> 8);
       px.setRingLed(bd, 0, idx, c);
       px.setRingLed(bd, 1, idx, c);
     }
   }
   px.show();
-  head = (head + 1) % ledsPerRing;
+  head++;
 }
 
 // ============================================================
@@ -92,22 +96,24 @@ void fxDualSpin(RobotechPixel& px, unsigned long now,
   uint8_t or_ = (outerColor >> 16) & 0xFF;
   uint8_t og  = (outerColor >> 8)  & 0xFF;
   uint8_t ob  =  outerColor        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   px.clear();
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int j = 0; j < arcLen; j++) {
-      uint8_t fade = 255 - (j * 255 / arcLen);
-      int iIdx = (pos - j + ledsPerRing) % ledsPerRing;
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    int al = min(arcLen, (int)lpr);
+    for (int j = 0; j < al; j++) {
+      uint8_t fade = 255 - (j * 255 / al);
+      int iIdx = ((pos % lpr) - j + lpr) % lpr;
       px.setRingLed(b, 0, iIdx, RobotechPixel::color(
         (ir * fade) >> 8, (ig * fade) >> 8, (ib * fade) >> 8));
-      int oIdx = (ledsPerRing - pos - j + ledsPerRing * 2) % ledsPerRing;
+      int oIdx = (lpr - (pos % lpr) - j + lpr * 2) % lpr;
       px.setRingLed(b, 1, oIdx, RobotechPixel::color(
         (or_ * fade) >> 8, (og * fade) >> 8, (ob * fade) >> 8));
     }
   }
   px.show();
-  pos = (pos + 1) % ledsPerRing;
+  pos++;
 }
 
 // ============================================================
@@ -132,7 +138,9 @@ void fxRipplePulse(RobotechPixel& px, unsigned long now,
   uint8_t outerVal = rpTriWave((uint8_t)(phase + 192));
 
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int i = 0; i < px.getLedsPerRing(); i++) {
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    for (int i = 0; i < lpr; i++) {
       px.setRingLed(b, 0, i, RobotechPixel::color(
         (ir * innerVal) >> 8, (ig * innerVal) >> 8, (ib * innerVal) >> 8));
       px.setRingLed(b, 1, i, RobotechPixel::color(
@@ -156,7 +164,9 @@ void fxTheaterChase(RobotechPixel& px, unsigned long now,
 
   px.clear();
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int i = step % 3; i < px.getLedsPerRing(); i += 3) {
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    for (int i = step % 3; i < lpr; i += 3) {
       px.setRingLed(b, 0, i, color);
       px.setRingLed(b, 1, i, color);
     }
@@ -192,10 +202,11 @@ void fxRainbowWheel(RobotechPixel& px, unsigned long now, int wait) {
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int i = 0; i < ledsPerRing; i++) {
-      uint32_t c = rpWheel(((i * 256 / ledsPerRing) + j) & 255);
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    for (int i = 0; i < lpr; i++) {
+      uint32_t c = rpWheel(((i * 256 / lpr) + j) & 255);
       px.setRingLed(b, 0, i, c);
       px.setRingLed(b, 1, i, c);
     }
@@ -209,39 +220,44 @@ void fxRainbowWheel(RobotechPixel& px, unsigned long now, int wait) {
 // ============================================================
 void fxFireRing(RobotechPixel& px, unsigned long now,
                 int cooling, int sparking, int wait) {
-  static byte heat[RP_NEORING_LEDS_PER_RING];
+  static byte heat[RP_MAX_LEDS_PER_RING];
   static unsigned long lastUpdate = 0;
 
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
+  // Use board 0's ring size for the heat simulation
+  uint8_t lpr = px.getLedsPerRing(0);
 
   // Cool down
-  for (int i = 0; i < ledsPerRing; i++) {
+  for (int i = 0; i < lpr; i++) {
     int cooldown = random(0, cooling);
     heat[i] = (heat[i] > cooldown) ? heat[i] - cooldown : 0;
   }
 
   // Spark
   for (int k = 0; k < sparking; k++) {
-    int pos = random(ledsPerRing);
+    int pos = random(lpr);
     heat[pos] = min(255, heat[pos] + random(60, 160));
   }
 
   // Smooth
-  byte smoothed[RP_NEORING_LEDS_PER_RING];
-  for (int i = 0; i < ledsPerRing; i++) {
-    int prev = (i - 1 + ledsPerRing) % ledsPerRing;
-    int next = (i + 1) % ledsPerRing;
+  byte smoothed[RP_MAX_LEDS_PER_RING];
+  for (int i = 0; i < lpr; i++) {
+    int prev = (i - 1 + lpr) % lpr;
+    int next = (i + 1) % lpr;
     smoothed[i] = ((int)heat[prev] + (int)heat[i] * 2 + (int)heat[next]) / 4;
   }
-  memcpy(heat, smoothed, ledsPerRing);
+  memcpy(heat, smoothed, lpr);
 
-  // Render
+  // Render to all boards
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int i = 0; i < ledsPerRing; i++) {
-      uint32_t c = rpHeatColor(heat[i]);
+    if (!px.boardHasRings(b)) continue;
+    uint8_t blpr = px.getLedsPerRing(b);
+    for (int i = 0; i < blpr; i++) {
+      // Map heat index proportionally for boards with different ring sizes
+      int hi = (int)((long)i * lpr / blpr);
+      uint32_t c = rpHeatColor(heat[hi]);
       px.setRingLed(b, 0, i, c);
       px.setRingLed(b, 1, i, c);
     }
@@ -264,18 +280,20 @@ void fxComets(RobotechPixel& px, unsigned long now,
   uint8_t cr = (cometColor >> 16) & 0xFF;
   uint8_t cg = (cometColor >> 8)  & 0xFF;
   uint8_t cb =  cometColor        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   px.clear();
   for (int bd = 0; bd < px.getNumBoards(); bd++) {
-    for (int j = 0; j < tailLen; j++) {
-      uint16_t fade = 255 - (j * 255 / tailLen);
+    if (!px.boardHasRings(bd)) continue;
+    uint8_t lpr = px.getLedsPerRing(bd);
+    int tl = min(tailLen, (int)lpr);
+    for (int j = 0; j < tl; j++) {
+      uint16_t fade = 255 - (j * 255 / tl);
       fade = (fade * fade) >> 8;
       uint8_t fr = (cr * fade) >> 8;
       uint8_t fg = (cg * fade) >> 8;
       uint8_t fb = (cb * fade) >> 8;
-      int i1 = (head - j + ledsPerRing) % ledsPerRing;
-      int i2 = (head + ledsPerRing / 2 - j + ledsPerRing) % ledsPerRing;
+      int i1 = ((head % lpr) - j + lpr) % lpr;
+      int i2 = ((head % lpr) + lpr / 2 - j + lpr) % lpr;
       px.setRingLed(bd, 0, i1, RobotechPixel::color(fr, fg, fb));
       px.setRingLed(bd, 1, i2, RobotechPixel::color(fr, fg, fb));
     }
@@ -293,5 +311,5 @@ void fxComets(RobotechPixel& px, unsigned long now,
   }
 
   px.show();
-  head = (head + 1) % ledsPerRing;
+  head++;
 }

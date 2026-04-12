@@ -12,12 +12,6 @@ void fxHeartbeat(RobotechPixel& px, unsigned long now,
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  // Heartbeat curve over 256 steps:
-  //   0-30   first beat ramp up
-  //   30-60  first beat ramp down
-  //   60-80  second beat ramp up (smaller)
-  //   80-100 second beat ramp down
-  //   100-255 rest
   uint8_t val = 0;
   uint16_t p = phase % 256;
   if      (p < 30)  val = (p * 255) / 30;
@@ -36,7 +30,7 @@ void fxHeartbeat(RobotechPixel& px, unsigned long now,
 }
 
 // ============================================================
-//  STARFIELD — stars radiating outward (polar ← cartesian)
+//  STARFIELD — stars radiating outward (polar <- cartesian)
 // ============================================================
 void fxStarfield(RobotechPixel& px, unsigned long now,
                  int maxStars, int wait) {
@@ -56,7 +50,6 @@ void fxStarfield(RobotechPixel& px, unsigned long now,
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
   const float maxRadius = 1.5f;
   const float innerThreshold = 0.75f;
 
@@ -69,7 +62,7 @@ void fxStarfield(RobotechPixel& px, unsigned long now,
   if (activeCount < count && random(10) < 4) {
     for (int i = 0; i < 12; i++) {
       if (!stars[i].active) {
-        float angle = random(0, 628) / 100.0f;  // 0 to ~2π
+        float angle = random(0, 628) / 100.0f;
         float speed = random(2, 6) / 100.0f;
         stars[i].x  = cos(angle) * 0.05f;
         stars[i].y  = sin(angle) * 0.05f;
@@ -91,19 +84,19 @@ void fxStarfield(RobotechPixel& px, unsigned long now,
     float radius = sqrt(stars[i].x * stars[i].x + stars[i].y * stars[i].y);
     if (radius > maxRadius) { stars[i].active = false; continue; }
 
-    // Polar conversion: cartesian (x,y) → angle → LED index
     float angle = atan2(stars[i].y, stars[i].x);
     if (angle < 0) angle += 2.0f * PI;
-    int ledIdx = (int)(angle / (2.0f * PI) * ledsPerRing) % ledsPerRing;
 
-    // Brightness increases with radius (approaching = brighter)
     uint8_t bright = min(255, (int)(radius * 255.0f / maxRadius));
-    // Inner ring when close to center, outer when further out
     int ring = (radius < innerThreshold) ? 0 : 1;
 
-    for (int bd = 0; bd < px.getNumBoards(); bd++)
+    for (int bd = 0; bd < px.getNumBoards(); bd++) {
+      if (!px.boardHasRings(bd)) continue;
+      uint8_t lpr = px.getLedsPerRing(bd);
+      int ledIdx = (int)(angle / (2.0f * PI) * lpr) % lpr;
       px.setRingLed(bd, ring, ledIdx, RobotechPixel::color(
         bright, bright, (bright * 200) >> 8));
+    }
   }
   px.show();
 }
@@ -119,19 +112,19 @@ void fxPolice(RobotechPixel& px, unsigned long now,
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
-  int half = ledsPerRing / 2;
-
-  // 4-step pattern: left-ON, all-OFF, right-ON, all-OFF
   px.clear();
   if (step % 2 == 0) {
     bool leftSide = (step % 4) == 0;
     uint32_t c = leftSide ? color1 : color2;
-    int start = leftSide ? 0 : half;
+
     for (int bd = 0; bd < px.getNumBoards(); bd++) {
+      if (!px.boardHasRings(bd)) continue;
+      uint8_t lpr = px.getLedsPerRing(bd);
+      int half = lpr / 2;
+      int start = leftSide ? 0 : half;
       for (int i = start; i < start + half; i++) {
-        px.setRingLed(bd, 0, i % ledsPerRing, c);
-        px.setRingLed(bd, 1, i % ledsPerRing, c);
+        px.setRingLed(bd, 0, i % lpr, c);
+        px.setRingLed(bd, 1, i % lpr, c);
       }
     }
   }
@@ -144,9 +137,9 @@ void fxPolice(RobotechPixel& px, unsigned long now,
 // ============================================================
 void fxTwinkle(RobotechPixel& px, unsigned long now,
                uint32_t color, int maxStars, int wait) {
-  static uint8_t brightness[RP_NEORING_LEDS_PER_RING];
-  static bool growing[RP_NEORING_LEDS_PER_RING];
-  static bool active[RP_NEORING_LEDS_PER_RING];
+  static uint8_t brightness[RP_MAX_LEDS_PER_RING];
+  static bool growing[RP_MAX_LEDS_PER_RING];
+  static bool active[RP_MAX_LEDS_PER_RING];
   static bool initialized = false;
   static unsigned long lastUpdate = 0;
 
@@ -160,19 +153,20 @@ void fxTwinkle(RobotechPixel& px, unsigned long now,
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
+  // Use board 0's ring size for the star simulation
+  uint8_t lpr = px.getLedsPerRing(0);
   uint8_t r = (color >> 16) & 0xFF;
   uint8_t g = (color >> 8)  & 0xFF;
   uint8_t b =  color        & 0xFF;
 
   // Count active stars
   int activeCount = 0;
-  for (int i = 0; i < ledsPerRing; i++)
+  for (int i = 0; i < lpr; i++)
     if (active[i]) activeCount++;
 
   // Randomly spawn new stars
   if (activeCount < maxStars && random(10) < 3) {
-    int idx = random(ledsPerRing);
+    int idx = random(lpr);
     if (!active[idx]) {
       active[idx] = true;
       growing[idx] = true;
@@ -182,7 +176,7 @@ void fxTwinkle(RobotechPixel& px, unsigned long now,
 
   // Update and render
   px.clear();
-  for (int i = 0; i < ledsPerRing; i++) {
+  for (int i = 0; i < lpr; i++) {
     if (!active[i]) continue;
     if (growing[i]) {
       brightness[i] = min(255, brightness[i] + random(5, 20));
@@ -195,8 +189,12 @@ void fxTwinkle(RobotechPixel& px, unsigned long now,
     uint8_t v = brightness[i];
     uint32_t c = RobotechPixel::color((r * v) >> 8, (g * v) >> 8, (b * v) >> 8);
     for (int bd = 0; bd < px.getNumBoards(); bd++) {
-      px.setRingLed(bd, 0, i, c);
-      px.setRingLed(bd, 1, i, c);
+      if (!px.boardHasRings(bd)) continue;
+      uint8_t blpr = px.getLedsPerRing(bd);
+      // Map proportionally for different ring sizes
+      int bi = (int)((long)i * blpr / lpr);
+      px.setRingLed(bd, 0, bi, c);
+      px.setRingLed(bd, 1, bi, c);
     }
   }
   px.show();
@@ -221,7 +219,6 @@ void fxOrbit(RobotechPixel& px, unsigned long now,
     RobotechPixel::color(255, 200, 0),
   };
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
   int count = min(numDots, 4);
 
   px.clear();
@@ -230,22 +227,25 @@ void fxOrbit(RobotechPixel& px, unsigned long now,
     uint8_t g = (colors[d] >> 8)  & 0xFF;
     uint8_t b =  colors[d]        & 0xFF;
 
-    int hi = (int)pos[d];
-    float frac = pos[d] - hi;
-
     for (int bd = 0; bd < px.getNumBoards(); bd++) {
+      if (!px.boardHasRings(bd)) continue;
+      uint8_t lpr = px.getLedsPerRing(bd);
+      int hi = ((int)pos[d]) % lpr;
+      float frac = pos[d] - (int)pos[d];
+
       // Anti-aliased head
-      int p0 = hi % ledsPerRing;
-      int p1 = (hi + 1) % ledsPerRing;
+      int p0 = hi % lpr;
+      int p1 = (hi + 1) % lpr;
       px.setRingLed(bd, d % 2, p0, RobotechPixel::color(
         (uint8_t)(r * (1.0f - frac)), (uint8_t)(g * (1.0f - frac)), (uint8_t)(b * (1.0f - frac))));
       px.setRingLed(bd, d % 2, p1, RobotechPixel::color(
         (uint8_t)(r * frac), (uint8_t)(g * frac), (uint8_t)(b * frac)));
 
       // Fading tail
-      for (int j = 1; j < tailLen; j++) {
-        int tp = (hi - j + ledsPerRing) % ledsPerRing;
-        float fade = 1.0f - (float)j / tailLen;
+      int tl = min(tailLen, (int)lpr);
+      for (int j = 1; j < tl; j++) {
+        int tp = (hi - j + lpr) % lpr;
+        float fade = 1.0f - (float)j / tl;
         fade *= fade;
         px.setRingLed(bd, d % 2, tp, RobotechPixel::color(
           (uint8_t)(r * fade), (uint8_t)(g * fade), (uint8_t)(b * fade)));
@@ -253,76 +253,62 @@ void fxOrbit(RobotechPixel& px, unsigned long now,
     }
 
     pos[d] += speeds[d];
-    if (pos[d] >= ledsPerRing) pos[d] -= ledsPerRing;
+    uint8_t lpr0 = px.getLedsPerRing(0);
+    if (pos[d] >= lpr0) pos[d] -= lpr0;
   }
   px.show();
 }
 
 // ============================================================
 //  HYPNOSIS — high-contrast plasma with glitter
-//
-//  Slow plasma waves (14–54 s cycles) pick colors from a
-//  curated neon palette, then a cubic brightness curve crushes
-//  most LEDs to black while peaks burn vivid.  White sparkles
-//  flash on top.  Pattern repeat period ≈ 404 days.
-//  Pure integer math — no floats, no trig.
 // ============================================================
 void fxHypnosis(RobotechPixel& px, unsigned long now, int wait) {
   static unsigned long lastUpdate = 0;
-  static uint8_t glitter[RP_NEORING_LEDS_PER_RING * 2];  // 96 bytes
+  static uint8_t glitter[RP_MAX_LEDS_PER_RING * 2];
   static bool glitterInit = false;
 
   if (!glitterInit) { memset(glitter, 0, sizeof(glitter)); glitterInit = true; }
   if (now - lastUpdate < (unsigned long)wait) return;
   lastUpdate = now;
 
-  const uint16_t N = px.getLedsPerRing();
-
-  // slow time bases — prime divisors, cycles: ~14s / 23s / 35s / 54s
   uint8_t t1 = now / 53;
   uint8_t t2 = now / 89;
   uint8_t t3 = now / 137;
   uint8_t t4 = now / 211;
 
-  // curated palette — ordered so every adjacent pair blends cleanly
   static const uint32_t pal[] = {
-    0xFF0060,   // hot pink
-    0x8000FF,   // violet
-    0x0050FF,   // royal blue
-    0x00FFAA,   // mint
-    0xBBFF00,   // lime
-    0xFF6000    // amber
+    0xFF0060, 0x8000FF, 0x0050FF, 0x00FFAA, 0xBBFF00, 0xFF6000
   };
   static const uint8_t palSz = 6;
 
-  // ---- glitter: decay then spawn ----
-  for (uint8_t i = 0; i < N * 2; i++)
-    glitter[i] = (glitter[i] > 35) ? glitter[i] - 35 : 0;
-  for (uint8_t s = 0; s < 2 + (uint8_t)random(3); s++)
-    glitter[random(N * 2)] = 255;
-
-  // ---- render ----
   px.clear();
 
   for (int bd = 0; bd < px.getNumBoards(); bd++) {
-    for (int ring = 0; ring < 2; ring++) {
+    if (!px.boardHasRings(bd)) continue;
+    uint8_t lpr = px.getLedsPerRing(bd);
+    uint8_t numR = px.getNumRings(bd);
+
+    // Glitter decay + spawn (use this board's ring size)
+    uint16_t glitSize = lpr * numR;
+    for (uint16_t i = 0; i < glitSize; i++)
+      glitter[i] = (glitter[i] > 35) ? glitter[i] - 35 : 0;
+    for (uint8_t s = 0; s < 2 + (uint8_t)random(3); s++)
+      glitter[random(glitSize)] = 255;
+
+    for (int ring = 0; ring < numR; ring++) {
       uint8_t rOfs = ring * 85;
 
-      for (int i = 0; i < N; i++) {
-        uint8_t a = (uint8_t)((uint16_t)i * 256 / N);
+      for (int i = 0; i < lpr; i++) {
+        uint8_t a = (uint8_t)((uint16_t)i * 256 / lpr);
 
-        // three slow plasma waves
         uint8_t w1 = rpTriWave((uint8_t)(a * 2 + t1 + rOfs));
         uint8_t w2 = rpTriWave((uint8_t)(a * 3 - t2 + rOfs));
-        uint8_t w3 = rpTriWave((uint8_t)(a     + t3
-                               + rpTriWave(t2 + rOfs)));
+        uint8_t w3 = rpTriWave((uint8_t)(a + t3 + rpTriWave(t2 + rOfs)));
 
-        // cubic brightness envelope — deep blacks, vivid peaks
         uint8_t env = (uint8_t)(((uint16_t)w1 + w2) >> 1);
         uint8_t sharp = (uint8_t)((uint16_t)env * env >> 8);
         sharp = (uint8_t)((uint16_t)sharp * env >> 8);
 
-        // palette blend via w3 + ultra-slow drift
         uint8_t cIdx  = w3 + t4;
         uint16_t scl  = (uint16_t)cIdx * palSz;
         uint8_t  pA   = (uint8_t)(scl >> 8);
@@ -337,13 +323,11 @@ void fxHypnosis(RobotechPixel& px, unsigned long now, int wait) {
         uint8_t cg = gA + ((int16_t)(gB - gA) * frac >> 8);
         uint8_t cb = bA + ((int16_t)(bB - bA) * frac >> 8);
 
-        // apply cubic brightness
         uint8_t r = (uint8_t)((uint16_t)cr * sharp >> 8);
         uint8_t g = (uint8_t)((uint16_t)cg * sharp >> 8);
         uint8_t b = (uint8_t)((uint16_t)cb * sharp >> 8);
 
-        // glitter: white sparkles drawn on top
-        uint8_t gv = glitter[ring * N + i];
+        uint8_t gv = glitter[ring * lpr + i];
         if (gv > r) r = gv;
         if (gv > g) g = gv;
         if (gv > b) b = gv;

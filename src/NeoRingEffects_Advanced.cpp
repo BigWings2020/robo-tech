@@ -32,12 +32,14 @@ void fxColorWipe(RobotechPixel& px, unsigned long now,
   lastUpdate = now;
 
   for (int b = 0; b < px.getNumBoards(); b++) {
-    px.setRingLed(b, 0, pos, color);
-    px.setRingLed(b, 1, pos, color);
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    px.setRingLed(b, 0, pos % lpr, color);
+    px.setRingLed(b, 1, pos % lpr, color);
   }
   px.show();
   pos++;
-  if (pos >= px.getLedsPerRing()) {
+  if (pos >= px.getLedsPerRing(0)) {
     pos = 0;
     px.clear();
   }
@@ -61,11 +63,12 @@ void fxWave(RobotechPixel& px, unsigned long now,
   uint8_t or_ = (outerColor >> 16) & 0xFF;
   uint8_t og  = (outerColor >> 8)  & 0xFF;
   uint8_t ob  =  outerColor        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   for (int b = 0; b < px.getNumBoards(); b++) {
-    for (int i = 0; i < ledsPerRing; i++) {
-      uint8_t raw = rpTriWave((uint8_t)((i * 256 / ledsPerRing) + offset));
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    for (int i = 0; i < lpr; i++) {
+      uint8_t raw = rpTriWave((uint8_t)((i * 256 / lpr) + offset));
       uint8_t val = rpGamma8(raw);
       px.setRingLed(b, 0, i, RobotechPixel::color(
         (ir * val) >> 8, (ig * val) >> 8, (ib * val) >> 8));
@@ -82,7 +85,7 @@ void fxWave(RobotechPixel& px, unsigned long now,
 // ============================================================
 void fxCylon(RobotechPixel& px, unsigned long now,
              uint32_t color, int width, int wait) {
-  static int pos = RP_NEORING_LEDS_PER_RING / 2;
+  static int pos = 24;
   static int8_t dir = 1;
   static unsigned long lastUpdate = 0;
 
@@ -93,13 +96,15 @@ void fxCylon(RobotechPixel& px, unsigned long now,
   uint8_t r  = (color >> 16) & 0xFF;
   uint8_t g  = (color >> 8)  & 0xFF;
   uint8_t bl =  color        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   px.clear();
   for (int bd = 0; bd < px.getNumBoards(); bd++) {
+    if (!px.boardHasRings(bd)) continue;
+    uint8_t lpr = px.getLedsPerRing(bd);
+    int p = pos % lpr;
     for (int j = -half; j <= half; j++) {
-      int idx = pos + j;
-      if (idx < 0 || idx >= ledsPerRing) continue;
+      int idx = p + j;
+      if (idx < 0 || idx >= lpr) continue;
       uint8_t fade = 255 - (abs(j) * 255 / (half + 1));
       px.setRingLed(bd, 0, idx, RobotechPixel::color(
         (r * fade) >> 8, (g * fade) >> 8, (bl * fade) >> 8));
@@ -108,8 +113,11 @@ void fxCylon(RobotechPixel& px, unsigned long now,
     }
   }
   px.show();
+
+  // Bounce using board 0's ring size
+  uint8_t lpr0 = px.getLedsPerRing(0);
   pos += dir;
-  if (pos >= ledsPerRing - half) dir = -1;
+  if (pos >= lpr0 - half) dir = -1;
   if (pos <= half) dir = 1;
 }
 
@@ -130,15 +138,16 @@ void fxMeteorShower(RobotechPixel& px, unsigned long now,
     if (random(10) > 3) px.fadePixel(i, fadeFactor);
   }
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
   for (int b = 0; b < px.getNumBoards(); b++) {
-    px.setRingLed(b, 0, m1, color1);
-    px.setRingLed(b, 1, m2, color2);
-    px.setRingLed(b, 0, m3, color3);
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    px.setRingLed(b, 0, m1 % lpr, color1);
+    px.setRingLed(b, 1, m2 % lpr, color2);
+    px.setRingLed(b, 0, m3 % lpr, color3);
   }
-  m1 = (m1 + 1) % ledsPerRing;
-  m2 = (m2 + 2) % ledsPerRing;
-  m3 = (m3 + 1) % ledsPerRing;
+  m1 = (m1 + 1);
+  m2 = (m2 + 2);
+  m3 = (m3 + 1);
   px.show();
 }
 
@@ -168,18 +177,20 @@ void fxCometCrosser(RobotechPixel& px, unsigned long now,
   uint8_t cr = (cometColor >> 16) & 0xFF;
   uint8_t cg = (cometColor >> 8)  & 0xFF;
   uint8_t cb =  cometColor        & 0xFF;
-  uint16_t ledsPerRing = px.getLedsPerRing();
 
   px.clear();
-  int hi = (int)angle;
-  float frac = angle - hi;
-  float iw = 1.0f - blend;
-  float ow = blend;
 
   for (int b = 0; b < px.getNumBoards(); b++) {
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+    int hi = ((int)angle) % lpr;
+    float frac = angle - (int)angle;
+    float iw = 1.0f - blend;
+    float ow = blend;
+
     // Anti-aliased head
     for (int k = 0; k < 2; k++) {
-      int pxIdx = (hi + k) % ledsPerRing;
+      int pxIdx = (hi + k) % lpr;
       float br = (k == 0) ? (1.0f - frac) : frac;
       px.setRingLed(b, 0, pxIdx, RobotechPixel::color(
         (uint8_t)(cr * br * iw), (uint8_t)(cg * br * iw), (uint8_t)(cb * br * iw)));
@@ -187,9 +198,10 @@ void fxCometCrosser(RobotechPixel& px, unsigned long now,
         (uint8_t)(cr * br * ow), (uint8_t)(cg * br * ow), (uint8_t)(cb * br * ow)));
     }
     // Quadratic fading tail
-    for (int j = 1; j < tailLen; j++) {
-      int tp = (hi - j + ledsPerRing) % ledsPerRing;
-      float fade = 1.0f - (float)j / tailLen;
+    int tl = min(tailLen, (int)lpr);
+    for (int j = 1; j < tl; j++) {
+      int tp = (hi - j + lpr) % lpr;
+      float fade = 1.0f - (float)j / tl;
       fade *= fade;
       px.setRingLed(b, 0, tp, RobotechPixel::color(
         (uint8_t)(cr * fade * iw), (uint8_t)(cg * fade * iw), (uint8_t)(cb * fade * iw)));
@@ -211,7 +223,9 @@ void fxCometCrosser(RobotechPixel& px, unsigned long now,
 
   px.show();
   angle += cometSpeed;
-  if (angle >= ledsPerRing) angle -= ledsPerRing;
+  uint8_t lpr0 = px.getLedsPerRing(0);
+  if (angle >= lpr0) angle -= lpr0;
+  if (angle < 0) angle += lpr0;
 }
 
 // ============================================================
@@ -268,22 +282,11 @@ void fxClockEffect(RobotechPixel& px, unsigned long now,
   if (startMs == 0) startMs = now;
   unsigned long elapsed = now - startMs;
 
-  uint16_t ledsPerRing = px.getLedsPerRing();
   int mins = (elapsed / 60000) % 60;
   int hrs  = (elapsed / 3600000) % 12;
 
-  // Smooth second position (CCW wiring → reverse for CW display)
-  float secCCW = (elapsed % 60000) / 1000.0f * ledsPerRing / 60.0f;
-  float secCW  = (float)ledsPerRing - secCCW;
-  if (secCW >= ledsPerRing) secCW -= ledsPerRing;
-  if (secCW < 0) secCW += ledsPerRing;
-  // Apply offset (LED 0 is at 9 o'clock, offset rotates to 12 o'clock)
-  secCW = fmod(secCW + clockOffset, (float)ledsPerRing);
-  int secInt = (int)secCW;
-  uint8_t secFrac = (uint8_t)((secCW - secInt) * 255);
-
-  int minPos  = (ledsPerRing - mins * ledsPerRing / 60 + clockOffset) % ledsPerRing;
-  int hourPos = (ledsPerRing - (hrs * ledsPerRing / 12 + mins * ledsPerRing / 720) + clockOffset) % ledsPerRing;
+  // Smooth second position — clockwise (increasing LED index = CW)
+  float secPos = (elapsed % 60000) / 60000.0f * RP_MAX_LEDS_PER_RING + clockOffset;
 
   uint8_t sr = (secondColor >> 16) & 0xFF;
   uint8_t sg = (secondColor >> 8)  & 0xFF;
@@ -293,9 +296,21 @@ void fxClockEffect(RobotechPixel& px, unsigned long now,
 
   px.clear();
   for (int b = 0; b < px.getNumBoards(); b++) {
+    if (!px.boardHasRings(b)) continue;
+    uint8_t lpr = px.getLedsPerRing(b);
+
+    // Scale positions to this board's ring size
+    float bSecPos = (elapsed % 60000) / 60000.0f * lpr + clockOffset;
+    while (bSecPos >= lpr) bSecPos -= lpr;
+    int secInt = (int)bSecPos;
+    uint8_t secFrac = (uint8_t)((bSecPos - secInt) * 255);
+
+    int minPos  = (mins * lpr / 60 + clockOffset) % lpr;
+    int hourPos = (hrs * lpr / 12 + mins * lpr / 720 + clockOffset) % lpr;
+
     // Hour hand
     for (int j = -halfHour; j <= halfHour; j++) {
-      int idx = (hourPos + j + ledsPerRing) % ledsPerRing;
+      int idx = (hourPos + j + lpr) % lpr;
       px.setRingLed(b, 0, idx, hourColor);
       px.setRingLed(b, 1, idx, hourColor);
     }
@@ -303,8 +318,8 @@ void fxClockEffect(RobotechPixel& px, unsigned long now,
     px.setRingLed(b, 0, minPos, minuteColor);
     px.setRingLed(b, 1, minPos, minuteColor);
     // Second hand (anti-aliased)
-    int s0 = secInt % ledsPerRing;
-    int s1 = (secInt + 1) % ledsPerRing;
+    int s0 = secInt % lpr;
+    int s1 = (secInt + 1) % lpr;
     uint8_t bright0 = 255 - secFrac;
     uint8_t bright1 = secFrac;
     px.setRingLed(b, 0, s0, RobotechPixel::color(
